@@ -58,4 +58,9 @@ public:
     void RemoveSearchItemChild(CItemSearch* child);
     void SetLimitExceeded(bool exceeded) { m_limitExceeded = exceeded; }
     bool GetLimitExceeded() const { return m_limitExceeded; }
+
+    // Counts every descendant, not just direct children - nested results (a match shown
+    // as a child of another match) would otherwise be left out of the header count, which
+    // only looks at this node's own m_children.
+    size_t GetTotalMatchCount() const;
 };

@@ -1427,10 +1427,49 @@ void CWinDirStatModel::OnToolsSetDates()
     }).DoModal();
 }
 
+namespace
+{
+    // GetFilesCount() reflects the scanned model, which silently skips hidden/protected
+    // files and directories, symlinks, and anything matching a user filter rule (Item.cpp,
+    // ScanItems) - so a directory can read as "wholly empty" there while still holding real
+    // files on disk. RemoveDirectory() used to catch this at deletion time since Windows
+    // itself refuses to remove a directory that still has any entry, hidden or not; that
+    // guarantee is gone once deletion goes through the generic recursive Delete path, so it
+    // has to be re-verified here against the real filesystem instead of the model. A nested
+    // empty subdirectory is fine (matches how this feature treats nested empty branches);
+    // an actual file, or anything that can't be verified (e.g. access denied), is not.
+    bool IsWhollyEmptyOnDisk(const std::wstring& path)
+    {
+        std::error_code ec;
+        std::filesystem::recursive_directory_iterator it(path, ec);
+        if (ec) return false;
+        for (; it != std::filesystem::recursive_directory_iterator(); it.increment(ec))
+        {
+            if (ec || !it->is_directory(ec) || ec) return false;
+        }
+        return true;
+    }
+}
+
 void CWinDirStatModel::OnCleanupRemoveEmpty()
 {
     const auto& roots = GetAllSelected();
     if (roots.empty()) return;
+
+    // If the user directly multi-selected both a folder and one of its own subfolders,
+    // drop the subfolder from the seed set - traversing from the folder already reaches
+    // it in proper parent-first order. Without this, a selected descendant could be
+    // pushed and processed before its own selected ancestor, since the stack below is
+    // seeded from `roots` as given and is otherwise only ever descended into top-down.
+    std::vector<CItem*> seeds;
+    for (CItem* root : roots)
+    {
+        const bool hasSelectedAncestor = std::ranges::any_of(roots, [&](const CItem* other)
+        {
+            return other != root && other->IsAncestorOf(root);
+        });
+        if (!hasSelectedAncestor) seeds.push_back(root);
+    }
 
     // Collect every directory whose entire subtree contains no files (GetFilesCount() == 0).
     // Such a directory is wholly empty, so all of its descendants qualify as well - both are
@@ -1439,14 +1478,15 @@ void CWinDirStatModel::OnCleanupRemoveEmpty()
     // only after its own parent has already been decided, so a qualifying parent always
     // precedes its qualifying children in emptyDirs.
     std::vector<CItem*> emptyDirs;
-    std::vector<CItem*> stack(roots.begin(), roots.end());
+    std::vector<CItem*> stack(seeds.begin(), seeds.end());
     std::unordered_set<CItem*> visited;
     for (CWaitCursor wc; !stack.empty();)
     {
         CItem* item = stack.back();
         stack.pop_back();
         if (!visited.insert(item).second) continue;
-        if (item->IsTypeOrFlag(IT_DIRECTORY) && !item->IsRootItem() && item->GetFilesCount() == 0)
+        if (item->IsTypeOrFlag(IT_DIRECTORY) && !item->IsRootItem() && item->GetFilesCount() == 0
+            && IsWhollyEmptyOnDisk(item->GetPathLong()))
         {
             emptyDirs.push_back(item);
         }

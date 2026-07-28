@@ -57,7 +57,7 @@ std::wstring CItemSearch::GetText(const int subitem) const
         // Format as "Search Results (1234+)"
         static const std::wstring tops = Localization::Lookup(IDS_SEARCH_RESULTS);
         return std::format(L"{} ({}{})", tops,
-            FormatCount(m_children.size()), m_limitExceeded ? L"+" : L"");
+            FormatCount(GetTotalMatchCount()), m_limitExceeded ? L"+" : L"");
     }
 
     // Parent hash nodes
@@ -93,6 +93,13 @@ int CItemSearch::GetTreeListChildCount() const
 CTreeListItem* CItemSearch::GetTreeListChild(const int i) const
 {
     return m_children[i];
+}
+
+size_t CItemSearch::GetTotalMatchCount() const
+{
+    size_t count = m_children.size();
+    for (const auto& child : m_children) count += child->GetTotalMatchCount();
+    return count;
 }
 
 HICON CItemSearch::GetIcon()

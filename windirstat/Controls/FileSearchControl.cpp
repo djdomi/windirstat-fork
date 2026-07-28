@@ -169,12 +169,34 @@ void CFileSearchControl::PopulateSearchResultsHierarchical(const std::vector<CIt
 void CFileSearchControl::RemoveItem(CItem* item)
 {
     const CSetRedrawLock lock(this);
+
+    // Gather every tracker entry affected by this deletion before touching any node.
+    // Deleting a node recursively destroys its own descendant nodes too (~CItemSearch),
+    // so a nested match's CItemSearch pointer would already be dangling by the time it's
+    // reached if entries were detached and erased in a single pass in arbitrary map order.
+    std::vector<std::pair<CItem*, CItemSearch*>> matches;
+    for (const auto& pair : m_itemTracker)
+    {
+        if (pair.first == item || item->IsAncestorOf(pair.first)) matches.emplace_back(pair);
+    }
+
+    // Detach only the topmost matched node per branch - RemoveSearchItemChild's destructor
+    // cascade takes care of any matched descendants nested inside it.
+    for (const auto& [matchedItem, node] : matches)
+    {
+        const bool hasMatchedAncestor = std::ranges::any_of(matches, [&](const auto& other)
+        {
+            return other.first != matchedItem && other.first->IsAncestorOf(matchedItem);
+        });
+        if (hasMatchedAncestor) continue;
+
+        auto* parent = static_cast<CItemSearch*>(node->GetParent());
+        (parent != nullptr ? parent : m_rootItem)->RemoveSearchItemChild(node);
+    }
+
     std::erase_if(m_itemTracker, [&](const auto& pair)
     {
-        if (pair.first != item && !item->IsAncestorOf(pair.first)) return false;
-        auto* parent = static_cast<CItemSearch*>(pair.second->GetParent());
-        (parent != nullptr ? parent : m_rootItem)->RemoveSearchItemChild(pair.second);
-        return true;
+        return pair.first == item || item->IsAncestorOf(pair.first);
     });
 }
 
