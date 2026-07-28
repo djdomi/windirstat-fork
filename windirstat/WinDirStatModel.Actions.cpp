@@ -1437,7 +1437,11 @@ namespace
     // guarantee is gone once deletion goes through the generic recursive Delete path, so it
     // has to be re-verified here against the real filesystem instead of the model. A nested
     // empty subdirectory is fine (matches how this feature treats nested empty branches);
-    // an actual file, or anything that can't be verified (e.g. access denied), is not.
+    // an actual file, a directory symlink/reparse point (is_directory() follows it to a
+    // target this iterator never descends into, so it could hide real files), or anything
+    // that can't be verified (e.g. access denied), is not. The error code is also checked
+    // once more after the loop: increment() can set it on the very call that also advances
+    // the iterator to the end, in which case the loop body never sees it.
     bool IsWhollyEmptyOnDisk(const std::wstring& path)
     {
         std::error_code ec;
@@ -1445,9 +1449,11 @@ namespace
         if (ec) return false;
         for (; it != std::filesystem::recursive_directory_iterator(); it.increment(ec))
         {
-            if (ec || !it->is_directory(ec)) return false;
+            if (ec) return false;
+            if (it->is_symlink(ec) || ec) return false;
+            if (!it->is_directory(ec) || ec) return false;
         }
-        return true;
+        return !ec;
     }
 }
 
