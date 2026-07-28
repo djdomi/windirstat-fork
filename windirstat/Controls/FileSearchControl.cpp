@@ -118,11 +118,16 @@ void CFileSearchControl::ProcessSearch(CItem* item,
         }
     }).DoModal();
 
+    PopulateSearchResults(matchedItems);
+}
+
+void CFileSearchControl::PopulateSearchResults(const std::vector<CItem*>& matchedItems)
+{
     // Add found items to the interface
     CWaitCursor wait;
     CollapseItem(0);
 
-    // Add to found items
+    // Add to found items, each as a direct child of the results root
     const CSetRedrawLock lock(this);
     m_itemTracker.reserve(matchedItems.size());
     for (CItem* matchedItem : matchedItems)
@@ -136,13 +141,39 @@ void CFileSearchControl::ProcessSearch(CItem* item,
     ExpandItem(0);
 }
 
+void CFileSearchControl::PopulateSearchResultsHierarchical(const std::vector<CItem*>& matchedItems)
+{
+    // Add found items to the interface, nested under their real filesystem parent when
+    // that parent is also part of the result set - so a match contained inside another
+    // match is shown as its child instead of as a separate, seemingly-independent entry.
+    CWaitCursor wait;
+    CollapseItem(0);
+
+    const CSetRedrawLock lock(this);
+    m_itemTracker.reserve(matchedItems.size());
+    for (CItem* matchedItem : matchedItems)
+    {
+        auto searchItem = new CItemSearch(matchedItem);
+        m_itemTracker.emplace(matchedItem, searchItem);
+
+        const auto parentIt = m_itemTracker.find(matchedItem->GetParent());
+        CItemSearch* parentNode = (matchedItem->GetParent() != nullptr && parentIt != m_itemTracker.end())
+            ? parentIt->second : m_rootItem;
+        parentNode->AddSearchItemChild(searchItem);
+    }
+
+    SortItems();
+    ExpandItem(0);
+}
+
 void CFileSearchControl::RemoveItem(CItem* item)
 {
     const CSetRedrawLock lock(this);
     std::erase_if(m_itemTracker, [&](const auto& pair)
     {
         if (pair.first != item && !item->IsAncestorOf(pair.first)) return false;
-        m_rootItem->RemoveSearchItemChild(pair.second);
+        auto* parent = static_cast<CItemSearch*>(pair.second->GetParent());
+        (parent != nullptr ? parent : m_rootItem)->RemoveSearchItemChild(pair.second);
         return true;
     });
 }
