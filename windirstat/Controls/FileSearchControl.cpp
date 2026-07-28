@@ -181,12 +181,23 @@ void CFileSearchControl::RemoveItem(CItem* item)
     }
 
     // Detach only the topmost matched node per branch - RemoveSearchItemChild's destructor
-    // cascade takes care of any matched descendants nested inside it.
+    // cascade takes care of any matched descendants nested inside it. "Nested inside" has
+    // to mean nested in this search-result tree, not just a filesystem descendant: flat
+    // (non-hierarchical) results are always direct children of m_rootItem regardless of
+    // real filesystem relationship, so a plain CItem::IsAncestorOf check here would wrongly
+    // skip detaching a flat sibling match, leaving it visible but no longer tracked - and
+    // pointing at a CItem that this same deletion is about to destroy.
     for (const auto& [matchedItem, node] : matches)
     {
         const bool hasMatchedAncestor = std::ranges::any_of(matches, [&](const auto& other)
         {
-            return other.first != matchedItem && other.first->IsAncestorOf(matchedItem);
+            if (other.second == node) return false;
+            for (auto* p = static_cast<CItemSearch*>(node->GetParent()); p != nullptr;
+                p = static_cast<CItemSearch*>(p->GetParent()))
+            {
+                if (p == other.second) return true;
+            }
+            return false;
         });
         if (hasMatchedAncestor) continue;
 
