@@ -1496,10 +1496,17 @@ void CWinDirStatModel::OnCleanupRemoveEmpty()
         }
     }
 
-    // Cap the result set the same way a text search does, so a huge tree cannot
-    // produce an unbounded list. Note: this sort can reorder a child ahead of its
-    // parent; PopulateSearchResultsHierarchical falls back to a top-level entry for
-    // any item whose parent is not (yet) in the tracker in that rare case.
+    // The old code deleted every match directly, so an unbounded count never showed up
+    // anywhere. Now that matches are shown in a list instead, a drive full of thousands
+    // of empty folders (e.g. leftover build/cache directories) would otherwise dump all
+    // of them into the result view at once. Capped the same way and using the same
+    // options key (COptions::SearchMaxResults) as the existing text search, so behavior
+    // is consistent and the largest folders (by logical size) are kept when the cap is
+    // hit - SetLimitExceeded() below then lets the result view show its usual
+    // "more results than shown" notice.
+    // Note: this sort can reorder a child ahead of its parent; PopulateSearchResultsHierarchical
+    // falls back to a top-level entry for any item whose parent is not (yet) in the tracker
+    // in that rare case.
     bool limitExceeded = false;
     if (const size_t maxResults = COptions::SearchMaxResults; emptyDirs.size() > maxResults)
     {
