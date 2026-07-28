@@ -1433,10 +1433,11 @@ void CWinDirStatModel::OnCleanupRemoveEmpty()
     if (roots.empty()) return;
 
     // Collect every directory whose entire subtree contains no files (GetFilesCount() == 0).
-    // Such a directory is wholly empty, so all of its descendants qualify as well. Each item is
-    // recorded before its children are pushed, so ancestors precede descendants; reversing then
-    // yields a bottom-up order suitable for RemoveDirectory, which only removes empty folders and
-    // so is guaranteed to find each parent empty once its children have been processed.
+    // Such a directory is wholly empty, so all of its descendants qualify as well - both are
+    // kept in the result set (rather than stopping at the topmost one) so the search view can
+    // display the real containment relationship instead of hiding it. Each item is appended
+    // only after its own parent has already been decided, so a qualifying parent always
+    // precedes its qualifying children in emptyDirs.
     std::vector<CItem*> emptyDirs;
     std::vector<CItem*> stack(roots.begin(), roots.end());
     std::unordered_set<CItem*> visited;
@@ -1455,43 +1456,27 @@ void CWinDirStatModel::OnCleanupRemoveEmpty()
         }
     }
 
-    if (emptyDirs.empty()) return;
-    if (!ConfirmOperation(IDS_MENU_REMOVE_EMPTY, COptions::ShowRemoveEmptyFoldersPrompt, emptyDirs)) return;
-
-    size_t deletedCount = 0;
-    std::unordered_set<const CItem*> deletedDirs;
-    std::unordered_set<CItem*> parentsToRefresh;
-    std::reverse(emptyDirs.begin(), emptyDirs.end());
-    CProgressDlg(emptyDirs.size(), CProgressDlg::Flags::None, AfxGetMainWnd(), [&](CProgressDlg* pdlg)
+    // Cap the result set the same way a text search does, so a huge tree cannot
+    // produce an unbounded list. Note: this sort can reorder a child ahead of its
+    // parent; PopulateSearchResultsHierarchical falls back to a top-level entry for
+    // any item whose parent is not (yet) in the tracker in that rare case.
+    bool limitExceeded = false;
+    if (const size_t maxResults = COptions::SearchMaxResults; emptyDirs.size() > maxResults)
     {
-        for (CItem* item : emptyDirs)
-        {
-            if (pdlg->IsCancelled()) break;
-
-            if (RemoveDirectory(item->GetPathLong().c_str()))
-            {
-                deletedCount++;
-                deletedDirs.insert(item);
-                if (CItem* parent = item->GetParent())
-                {
-                    parentsToRefresh.insert(parent);
-                }
-                pdlg->Increment();
-            }
-        }
-    }).DoModal();
-
-    // Refresh parents of deleted items that were not themselves deleted
-    std::erase_if(parentsToRefresh, [&](const CItem* parent) {
-        return deletedDirs.contains(parent);
-    });
-
-    if (!parentsToRefresh.empty())
-    {
-        RefreshItem(std::vector<CItem*>(parentsToRefresh.begin(), parentsToRefresh.end()));
+        std::ranges::partial_sort(emptyDirs, emptyDirs.begin() + maxResults,
+            std::ranges::greater{}, &CItem::GetSizeLogical);
+        emptyDirs.resize(maxResults);
+        limitExceeded = true;
     }
-    else if (deletedCount > 0)
-    {
-        RefreshItem(roots);
-    }
+
+    // Show the found empty folders in the search results view instead of deleting them
+    // directly, nested to reflect which ones are contained inside another result. From
+    // there, the user picks which ones to keep and removes the rest via the normal
+    // Delete / Delete to Recycle Bin commands, same as any other search result.
+    CFileSearchControl::Get()->SetRootItem();
+    CFileSearchControl::Get()->GetRootItem()->SetLimitExceeded(limitExceeded);
+    CFileSearchControl::Get()->PopulateSearchResultsHierarchical(emptyDirs);
+
+    CMainFrame::Get()->GetFileTabbedView()->SetSearchTabVisibility(true);
+    CMainFrame::Get()->GetFileTabbedView()->SetActiveSearchView();
 }
