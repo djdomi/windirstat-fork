@@ -181,10 +181,7 @@ void CFileSearchControl::SearchEmptyFolders(const std::vector<CItem*>& items)
             pdlg->Increment();
             CItem* item = stack.back();
             stack.pop_back();
-            // GetFilesCount() can undercount (excluded hidden/protected/symlink files, filter
-            // rules), so IsEmptyFolderOnDisk() re-verifies against the real filesystem too.
-            if (item->IsTypeOrFlag(IT_DIRECTORY) && !item->IsRootItem() && item->GetFilesCount() == 0
-                && FinderBasic::IsEmptyFolderOnDisk(item->GetPathLong(), emptyFoldersMap))
+            if (FinderBasic::IsEmptyFolderOnDisk(item, emptyFoldersMap))
             {
                 // Cap like the existing text search, so a drive full of leftover empty
                 // folders doesn't dump everything into the result view at once; stop the
@@ -197,7 +194,9 @@ void CFileSearchControl::SearchEmptyFolders(const std::vector<CItem*>& items)
                 results.push_back(item);
                 continue;
             }
-            if (item->HasChildren())
+            // Don't descend into followed links: their children live outside the selected
+            // physical tree, so an empty folder found there isn't one the user asked about.
+            if (item->HasChildren() && !item->IsTypeOrFlag(ITRP_MASK))
             {
                 stack.insert(stack.end(), item->GetChildren().begin(), item->GetChildren().end());
             }
