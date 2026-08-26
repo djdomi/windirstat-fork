@@ -243,7 +243,7 @@ protected:
     void OnCleanupCompress(UINT id);
     void OnCleanupOptimizeVhd();
     void OnCleanupSparsifyFile();
-    void OnCleanupRemoveEmpty();
+    void OnSearchEmptyFolders();
     void OnToolsSetDates();
     void OnScanSuspend();
     void OnScanResume();
@@ -301,7 +301,7 @@ inline std::span<const RouteEntry> CWinDirStatModel::Routes()
         Route::Update<&ThisClass::OnUpdateCentralHandler>(ID_CLEANUP_DELETE),
         Route::Command<&ThisClass::OnCleanupEmptyFolder>(ID_CLEANUP_EMPTY_FOLDER),
         Route::Update<&ThisClass::OnUpdateCentralHandler>(ID_CLEANUP_EMPTY_FOLDER),
-        Route::Command<&ThisClass::OnCleanupRemoveEmpty>(ID_CLEANUP_REMOVE_EMPTY),
+        Route::Command<&ThisClass::OnSearchEmptyFolders>(ID_CLEANUP_REMOVE_EMPTY),
         Route::Update<&ThisClass::OnUpdateCentralHandler>(ID_CLEANUP_REMOVE_EMPTY),
         Route::Command<&ThisClass::OnRemoveShadowCopies>(ID_CLEANUP_REMOVE_SHADOW),
         Route::Update<&ThisClass::OnUpdateCentralHandler>(ID_CLEANUP_REMOVE_SHADOW),
