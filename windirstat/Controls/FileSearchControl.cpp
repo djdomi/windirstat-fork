@@ -195,7 +195,8 @@ void CFileSearchControl::SearchEmptyFolders(const std::vector<CItem*>& items)
         }
     }).ShowModal();
 
-    // Add found items to the interface
+    // Add found items to the interface - a snapshot, like every other scan result: a folder
+    // listed here can still gain a file before the user gets around to deleting it.
     CWaitCursor wait;
     CollapseItem(0);
 
@@ -210,9 +211,6 @@ void CFileSearchControl::SearchEmptyFolders(const std::vector<CItem*>& items)
 
     SortItems();
     ExpandItem(0);
-
-    // Known limitation: a folder that gains a file after this scan but before the user
-    // deletes it from the results list still gets deleted along with that new file.
 }
 
 void CFileSearchControl::RemoveItem(CItem* item)
