@@ -18,6 +18,7 @@
 #include "pch.h"
 #include "ItemSearch.h"
 #include "FileTreeView.h"
+#include "FinderBasic.h"
 
 CFileSearchControl::CFileSearchControl() : CTreeListControl(COptions::SearchViewColumnOrder.Ptr(), COptions::SearchViewColumnWidths.Ptr(), COptions::SearchViewColumnVisibility.Ptr(), LF_SEARCHLIST, false)
 {
@@ -116,6 +117,11 @@ void CFileSearchControl::ProcessSearch(CItem* item,
     }).ShowModal();
 
     // Add found items to the interface
+    PopulateSearchResults(matchedItems);
+}
+
+void CFileSearchControl::PopulateSearchResults(const std::vector<CItem*>& matchedItems)
+{
     CWaitCursor wait;
     CollapseItem(0);
 
@@ -131,6 +137,90 @@ void CFileSearchControl::ProcessSearch(CItem* item,
 
     SortItems();
     ExpandItem(0);
+}
+
+void CFileSearchControl::SearchEmptyFolders(const std::vector<CItem*>& items)
+{
+    // Update tab visibility to show search tab if results exist
+    CMainFrame::Get()->GetFileTabbedView()->SetSearchTabVisibility(true);
+
+    // A directory whose attributes could not be read, or that is a reparse point, cannot be
+    // walked safely: its contents may not belong to the physical tree it appears to sit in.
+    const auto isUnsafeDirectory = [](const CItem* item) noexcept
+    {
+        if (!item->IsTypeOrFlag(IT_DIRECTORY)) return false;
+
+        const DWORD attributes = item->GetAttributes();
+        return attributes == INVALID_FILE_ATTRIBUTES ||
+            (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+    };
+
+    // Start only where the filesystem calls below apply, so MTP devices are left out, and only
+    // where nothing on the way down from the scan root is a link the selection was reached
+    // through. Descendants of another selected item are dropped as well, so a nested pair is
+    // not walked twice - which also keeps duplicate entries out of the result list.
+    std::vector<CItem*> stack;
+    stack.reserve(items.size());
+    ULONGLONG totalItems = 0;
+    for (CItem* item : items)
+    {
+        if (!item->SupportsFilesystemApis()) continue;
+
+        const CItem* ancestor = item;
+        while (ancestor != nullptr && !isUnsafeDirectory(ancestor)) ancestor = ancestor->GetParent();
+        if (ancestor != nullptr) continue;
+
+        if (std::ranges::any_of(items, [&](const CItem* other)
+            { return other != item && other->IsAncestorOf(item); })) continue;
+
+        totalItems += item->GetItemsCount();
+        stack.push_back(item);
+    }
+
+    // Every empty directory of a branch is listed, not only its topmost one. Deleting the top
+    // does take the whole branch with it, but the choice of how much of a branch to remove
+    // belongs to the user, so each nested empty directory gets its own selectable entry.
+    std::vector<CItem*> results;
+    CProgressDlg(static_cast<size_t>(totalItems), CProgressDlg::Flags::None, GetMainWindow(), [&](CProgressDlg* pdlg)
+    {
+        // Remove previous results
+        SetRootItem();
+        m_rootItem->SetLimitExceeded(false);
+
+        std::unordered_map<std::wstring, bool> checkedFolders;
+
+        while (!stack.empty() && !pdlg->IsCancelled())
+        {
+            pdlg->Increment();
+            CItem* item = stack.back();
+            stack.pop_back();
+            if (FinderBasic::IsEmptyFolderOnDisk(item, checkedFolders))
+            {
+                // Cap like the existing text search, so a drive full of leftover empty
+                // folders doesn't dump everything into the result view at once; stop the
+                // scan itself once hit instead of collecting everything first.
+                if (results.size() >= COptions::SearchMaxResults)
+                {
+                    m_rootItem->SetLimitExceeded(true);
+                    break;
+                }
+                results.push_back(item);
+            }
+
+            // Descend into a directory that was just listed as well, so the empty directories
+            // nested inside it get their own entries. Followed links stay the exception: their
+            // children live outside the selected physical tree, so an empty folder found there
+            // isn't one the user asked about.
+            if (item->HasChildren() && !item->IsTypeOrFlag(ITRP_MASK))
+            {
+                stack.insert(stack.end(), item->GetChildren().begin(), item->GetChildren().end());
+            }
+        }
+    }).ShowModal();
+
+    // Add found items to the interface - a snapshot, like every other scan result: a folder
+    // listed here can still gain a file before the user gets around to deleting it.
+    PopulateSearchResults(results);
 }
 
 void CFileSearchControl::RemoveItem(CItem* item)
