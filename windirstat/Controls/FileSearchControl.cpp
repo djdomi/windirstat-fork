@@ -144,26 +144,42 @@ void CFileSearchControl::SearchEmptyFolders(const std::vector<CItem*>& items)
     // Update tab visibility to show search tab if results exist
     CMainFrame::Get()->GetFileTabbedView()->SetSearchTabVisibility(true);
 
-    // Drop items that are descendants of another selected item, so a nested pair can't
-    // end up as two overlapping topmost matches - no duplicate-tracking set is needed below.
+    // A directory whose attributes could not be read, or that is a reparse point, cannot be
+    // walked safely: its contents may not belong to the physical tree it appears to sit in.
+    const auto isUnsafeDirectory = [](const CItem* item) noexcept
+    {
+        if (!item->IsTypeOrFlag(IT_DIRECTORY)) return false;
+
+        const DWORD attributes = item->GetAttributes();
+        return attributes == INVALID_FILE_ATTRIBUTES ||
+            (attributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+    };
+
+    // Start only where the filesystem calls below apply, so MTP devices are left out, and only
+    // where nothing on the way down from the scan root is a link the selection was reached
+    // through. Descendants of another selected item are dropped as well, so a nested pair is
+    // not walked twice - which also keeps duplicate entries out of the result list.
     std::vector<CItem*> stack;
     stack.reserve(items.size());
     ULONGLONG totalItems = 0;
     for (CItem* item : items)
     {
-        const bool hasSelectedAncestor = std::ranges::any_of(items, [&](const CItem* other)
-        {
-            return other != item && other->IsAncestorOf(item);
-        });
-        if (!hasSelectedAncestor)
-        {
-            totalItems += item->GetItemsCount();
-            stack.push_back(item);
-        }
+        if (!item->SupportsFilesystemApis()) continue;
+
+        const CItem* ancestor = item;
+        while (ancestor != nullptr && !isUnsafeDirectory(ancestor)) ancestor = ancestor->GetParent();
+        if (ancestor != nullptr) continue;
+
+        if (std::ranges::any_of(items, [&](const CItem* other)
+            { return other != item && other->IsAncestorOf(item); })) continue;
+
+        totalItems += item->GetItemsCount();
+        stack.push_back(item);
     }
 
-    // Only the topmost directory of each empty branch is kept - removing it (via Delete /
-    // Delete to Recycle Bin) takes the whole branch with it, so descendants don't need entries.
+    // Every empty directory of a branch is listed, not only its topmost one. Deleting the top
+    // does take the whole branch with it, but the choice of how much of a branch to remove
+    // belongs to the user, so each nested empty directory gets its own selectable entry.
     std::vector<CItem*> results;
     CProgressDlg(static_cast<size_t>(totalItems), CProgressDlg::Flags::None, GetMainWindow(), [&](CProgressDlg* pdlg)
     {
@@ -189,10 +205,12 @@ void CFileSearchControl::SearchEmptyFolders(const std::vector<CItem*>& items)
                     break;
                 }
                 results.push_back(item);
-                continue;
             }
-            // Don't descend into followed links: their children live outside the selected
-            // physical tree, so an empty folder found there isn't one the user asked about.
+
+            // Descend into a directory that was just listed as well, so the empty directories
+            // nested inside it get their own entries. Followed links stay the exception: their
+            // children live outside the selected physical tree, so an empty folder found there
+            // isn't one the user asked about.
             if (item->HasChildren() && !item->IsTypeOrFlag(ITRP_MASK))
             {
                 stack.insert(stack.end(), item->GetChildren().begin(), item->GetChildren().end());
