@@ -543,6 +543,7 @@ void CWinDirStatModel::DeletePhysicalItems(const std::vector<CItem*>& items, con
 
     // Use direct parallel deletion only for filesystem items without shell progress UI
     bool cancelled = false;
+    HRESULT lastError = S_OK;
     if (!hasMtpItems && !toTrashBin && !COptions::ShowMicrosoftProgress) CProgressDlg(
         totalItems, CProgressDlg::Flags::None, GetMainWindow(), [&](CProgressDlg* pdlg)
         {
@@ -589,7 +590,14 @@ void CWinDirStatModel::DeletePhysicalItems(const std::vector<CItem*>& items, con
                     return;
                 }
 
-                RemoveDirectory(item->GetPathLong().c_str());
+                if (!RemoveDirectory(item->GetPathLong().c_str()))
+                {
+                    // A directory that is already gone is the outcome that was asked for,
+                    // whether this pass removed it as a child or something else did
+                    if (const DWORD error = GetLastError();
+                        error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND)
+                        lastError = static_cast<HRESULT>(error);
+                }
                 pdlg->Increment();
             }
 
@@ -626,7 +634,11 @@ void CWinDirStatModel::DeletePhysicalItems(const std::vector<CItem*>& items, con
             const CComPtr<IShellItemArray> psia = CreateShellItemArray(itemsToDelete, true);
             if (psia == nullptr || FAILED(fileOperation->DeleteItems(psia))) return;
             const HRESULT res = fileOperation->PerformOperations();
-            if (res != S_OK) VTRACE(L"File Operation Failed: {}", TranslateError(res));
+            if (res != S_OK)
+            {
+                lastError = res;
+                VTRACE(L"File Operation Failed: {}", TranslateError(res));
+            }
         };
 
         if (COptions::ShowMicrosoftProgress)
@@ -634,6 +646,26 @@ void CWinDirStatModel::DeletePhysicalItems(const std::vector<CItem*>& items, con
         else
             CProgressDlg(0, CProgressDlg::Flags::None, GetMainWindow(), [&](const CProgressDlg* pdlg)
                 { doDelete(*pdlg, flags | FOF_NO_UI); }).ShowModal();
+    }
+
+    // Report a removal that the operating system refused. Which of the deletion paths above ran
+    // depends on the options and the item types, so what is left over is read back from the
+    // filesystem rather than from any one of them. Without this the refresh below drops a
+    // folder that could not be removed from the view just like one that was, so the failure
+    // leaves no trace at all. Windows supplies the reason already translated; where several
+    // items failed for different reasons, the message names the reason of one of them.
+    if (!cancelled && lastError != S_OK)
+    {
+        std::vector<std::wstring> failedPaths;
+        for (const auto& item : itemsToDelete)
+        {
+            if (item->SupportsFilesystemApis() &&
+                GetFileAttributes(item->GetPathLong().c_str()) != INVALID_FILE_ATTRIBUTES)
+                failedPaths.emplace_back(item->GetPath());
+        }
+
+        if (!failedPaths.empty()) CMessageBoxDlg::Show(TranslateError(lastError), failedPaths,
+            {}, false, MB_OK | MB_ICONWARNING, GetMainWindow(), { 600, 400 }, Localization::Lookup(IDS_DELETE_TITLE));
     }
 
     // Create a recycler directories to refresh
