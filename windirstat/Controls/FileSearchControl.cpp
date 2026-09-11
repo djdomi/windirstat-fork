@@ -150,6 +150,10 @@ void CFileSearchControl::SearchEmptyFolders(const std::vector<CItem*>& items)
     // Update tab visibility to show search tab if results exist
     CMainFrame::Get()->GetFileTabbedView()->SetSearchTabVisibility(true);
 
+    // Remove previous results
+    SetRootItem();
+    m_rootItem->SetLimitExceeded(false);
+
     // A directory whose attributes could not be read, or that is a reparse point, cannot be
     // walked safely: its contents may not belong to the physical tree it appears to sit in.
     const auto isUnsafeDirectory = [](const CItem* item) noexcept
@@ -187,12 +191,9 @@ void CFileSearchControl::SearchEmptyFolders(const std::vector<CItem*>& items)
     // does take the whole branch with it, but the choice of how much of a branch to remove
     // belongs to the user, so each nested empty directory gets its own selectable entry.
     std::vector<CItem*> results;
+    bool limitExceeded = false;
     CProgressDlg(static_cast<size_t>(totalItems), CProgressDlg::Flags::None, GetMainWindow(), [&](CProgressDlg* pdlg)
     {
-        // Remove previous results
-        SetRootItem();
-        m_rootItem->SetLimitExceeded(false);
-
         std::unordered_map<std::wstring, bool> checkedFolders;
 
         while (!stack.empty() && !pdlg->IsCancelled())
@@ -207,7 +208,7 @@ void CFileSearchControl::SearchEmptyFolders(const std::vector<CItem*>& items)
                 // scan itself once hit instead of collecting everything first.
                 if (results.size() >= COptions::SearchMaxResults)
                 {
-                    m_rootItem->SetLimitExceeded(true);
+                    limitExceeded = true;
                     break;
                 }
                 results.push_back(item);
@@ -223,6 +224,7 @@ void CFileSearchControl::SearchEmptyFolders(const std::vector<CItem*>& items)
             }
         }
     }).ShowModal();
+    m_rootItem->SetLimitExceeded(limitExceeded);
 
     // Add found items to the interface - a snapshot, like every other scan result: a folder
     // listed here can still gain a file before the user gets around to deleting it.
