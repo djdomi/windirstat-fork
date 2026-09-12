@@ -153,7 +153,7 @@ void CPageTreeMap::UpdatePresetSelection()
             options.GetLightSourceXPercent(), options.GetLightSourceYPercent());
     };
     const auto current = appearance(m_options);
-    const int maxPreset = std::to_underlying(CTreeMap::Preset::HighContrast);
+    constexpr int maxPreset = std::to_underlying(CTreeMap::Preset::HighContrast);
     const auto presets = std::views::iota(0, maxPreset + 1);
     const auto it = std::ranges::find_if(presets, [&](const int preset) {
         return current == appearance(CTreeMap::GetPreset(static_cast<CTreeMap::Preset>(preset)));

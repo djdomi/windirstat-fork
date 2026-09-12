@@ -748,7 +748,8 @@ void CSunburst::DrawOutlineItems(CDC* pdc, const std::span<const CItem* const> i
     drawnEntries.reserve(items.size() * 2);
     const auto drawEntry = [&](const LayoutEntry* entry)
     {
-        if (entry == nullptr || !drawnEntries.emplace(entry).second) return;
+        if (entry == nullptr) return;
+        if (!drawnEntries.emplace(entry).second) return;
         Gdiplus::GraphicsPath path(Gdiplus::FillModeAlternate);
         CreatePath(*entry, path);
         graphics.DrawPath(&pen, &path);

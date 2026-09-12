@@ -68,7 +68,7 @@ void QueryShadowCopies(ULONGLONG& count, ULONGLONG& bytesUsed)
 
         CComVariant usedStr, usedString;
         if (SUCCEEDED(pObj->Get(L"UsedSpace", 0, &usedStr, nullptr, nullptr)) &&
-            SUCCEEDED(VariantChangeType(&usedString, &usedStr, 0, VT_UI8)))
+            SUCCEEDED(usedString.ChangeType(VT_UI8, &usedStr)))
             bytesUsed += usedString.ullVal;
     }
 

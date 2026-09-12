@@ -296,7 +296,7 @@ void CFlameGraph::LayoutItem(const CItem* item, const CRect& rc, const int depth
     std::vector<ChildSpan> childSpans;
     while (!pending.empty())
     {
-        const auto current = pending.back();
+        const PendingItem current = pending.back();
         pending.pop_back();
         if (current.item == nullptr || current.rectangle.Width() <= 0
             || current.rectangle.Height() <= 0)
