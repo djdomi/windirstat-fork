@@ -172,6 +172,9 @@
 #define IDC_SEARCH_SIZE_MIN             1155
 #define IDC_SEARCH_SIZE_MAX             1156
 #define IDC_SEARCH_SIZE_UNITS           1157
+#define IDC_SEARCH_FILES                1158
+#define IDC_SEARCH_FOLDERS              1159
+#define IDC_SEARCH_OWNER                1160
 #define ID_WDS_CONTROL                  4711
 #define ID_TREEMAP_ZOOMRESET            32767
 #define ID_CLEANUP_EXPLORER_SELECT      32768
@@ -301,7 +304,7 @@
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        306
 #define _APS_NEXT_COMMAND_VALUE         32976
-#define _APS_NEXT_CONTROL_VALUE         1158
+#define _APS_NEXT_CONTROL_VALUE         1161
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
 #endif
