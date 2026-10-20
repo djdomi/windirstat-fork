@@ -100,6 +100,7 @@
 #define IDC_PROMPT_DISM_NORMAL          1094
 #define IDC_PROMPT_DISM_RESET           1095
 #define IDC_PROMPT_SET_DATES            1096
+#define IDC_PROMPT_REMOVE_EMPTY         1097
 #define IDC_RADIO_TARGET_DRIVES_ALL     1098
 #define IDC_RADIO_TARGET_DRIVES_SUBSET  1099
 #define IDC_RADIO_TARGET_FOLDER         1100
@@ -337,6 +338,7 @@
 #define ID_WATCHER_START                32967
 #define ID_WDS_CONTROL                  32968
 #define ID_FILE_SELECT_CLOUD           32969
+#define ID_CLEANUP_SEARCH_EMPTY         32970
 #define IDD_SELECTCLOUD                 122
 #define IDD_CLOUD_CONNECTION            123
 #define IDD_S3_CONNECTION               119
@@ -373,7 +375,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        124
-#define _APS_NEXT_COMMAND_VALUE         32970
+#define _APS_NEXT_COMMAND_VALUE         32971
 #define _APS_NEXT_CONTROL_VALUE         1204
 #define _APS_NEXT_SYMED_VALUE           124
 #endif
