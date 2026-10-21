@@ -53,19 +53,11 @@ void CItemTop::AddTopItemChild(CItemTop* child)
     }
 }
 
-void CItemTop::RemoveTopItemChild(CItemTop* child)
+void CItemTop::RemoveTopItemChildren(const std::unordered_set<CItemTop*>& children)
 {
-    if (IsVisible())
-    {
-        CFileTopControl::Get()->OnChildRemoved(this, child);
-    }
-
+    // Callers remove the rows first through CTreeListControl::OnChildrenRemoved
     std::scoped_lock guard(m_protect);
-    auto& children = m_children;
-    if (const auto it = std::ranges::find(children, child); it != children.end())
-    {
-        children.erase(it);
-    }
+    std::erase_if(m_children, [&](CItemTop* child) { return children.contains(child); });
 
-    delete child;
+    for (const auto* child : children) delete child;
 }

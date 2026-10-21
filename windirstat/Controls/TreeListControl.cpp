@@ -778,6 +778,34 @@ void CTreeListControl::OnChildRemoved(const CTreeListItem* parent, const CTreeLi
     RedrawItems(p, p);
 }
 
+void CTreeListControl::OnChildrenRemoved(const std::unordered_set<const CTreeListItem*>& children)
+{
+    // Gather the shown rows of all removed children and their expanded descendants and drop
+    // them together; removing child by child renumbers all following rows once per child
+    std::unordered_set<const CWdsListItem*> rows;
+    std::unordered_set<const CTreeListItem*> parents;
+    for (const CTreeListItem* child : children)
+    {
+        const int c = FindTreeItem(child);
+        if (c == -1) continue;
+
+        rows.insert(child);
+        for (int k = c + 1; k < GetItemCount(); ++k)
+        {
+            const CTreeListItem* row = GetItem(k);
+            if (row->GetIndent() <= child->GetIndent()) break;
+            rows.insert(row);
+        }
+        if (const CTreeListItem* parent = child->GetParent(); parent != nullptr) parents.insert(parent);
+    }
+    RemoveListItems(rows);
+
+    for (const CTreeListItem* parent : parents)
+    {
+        if (const int p = FindTreeItem(parent); p != -1) RedrawItems(p, p);
+    }
+}
+
 void CTreeListControl::OnRemovingAllChildren(const CTreeListItem* parent)
 {
     if (!parent->IsVisible())

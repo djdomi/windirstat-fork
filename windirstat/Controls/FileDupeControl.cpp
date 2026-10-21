@@ -200,60 +200,48 @@ void CFileDupeControl::RemoveItem(CItem* item)
         });
     }
 
-    // Clean up any empty visual nodes in the list
+    // Clean up any empty visual nodes in the list. Changes are gathered across all groups and
+    // their rows dropped in one pass; removing row by row renumbers the list once per row.
     const ScopedRedrawPause lock(this);
+    std::unordered_set<const CTreeListItem*> rows;
+    std::vector<std::pair<CItemDupe*, std::unordered_set<CItemDupe*>>> shrunkGroups;
+    std::unordered_set<CItemDupe*> emptyGroups;
     for (auto nodeIter = m_nodeTracker.begin(); nodeIter != m_nodeTracker.end(); )
     {
-        auto& [dupeParentKey, dupeParent] = *nodeIter;
+        CItemDupe* dupeParent = nodeIter->second;
 
-        // Remove from child tracker
+        // Drop visual children whose files are no longer hashed. A tracked file without a
+        // visual child (pending add not yet flushed) stays tracked so both stay in sync.
         auto& childItems = m_childTracker[dupeParent];
-        for (auto childItem = childItems.begin(); childItem != childItems.end(); )
+        std::unordered_set<CItemDupe*> dropped;
+        for (CItemDupe* visualChild : dupeParent->GetChildren())
         {
-            // Nothing to do if still marked as hashed
-            if ((*childItem)->IsTypeOrFlag(ITHASH_MASK))
-            {
-                ++childItem;
-                continue;
-            }
-
-            // Remove from child tracker and visual tree
-            const auto& children = dupeParent->GetChildren();
-            const auto visualIter = std::ranges::find_if(children, [&](CItemDupe* visualChild) {
-                return visualChild->GetLinkedItem() == *childItem;
-            });
-            const bool foundVisualChild = visualIter != children.end();
-            if (foundVisualChild)
-            {
-                dupeParent->RemoveDupeItemChild(*visualIter);
-            }
-
-            // Only erase from tracker when the visual child was actually removed;
-            // if no visual match exists (pending add not yet flushed), leave the
-            // tracker entry intact so it stays in sync with the visual tree.
-            if (foundVisualChild)
-                childItem = childItems.erase(childItem);
-            else
-                ++childItem;
+            CItem* childItem = visualChild->GetLinkedItem();
+            if (childItem->IsTypeOrFlag(ITHASH_MASK) || !childItems.contains(childItem)) continue;
+            dropped.insert(visualChild);
+            childItems.erase(childItem);
         }
 
-        // When only one child left, remove child item
-        if (dupeParent->GetChildren().size() == 1)
+        // A group left with one child or none no longer shows a duplicate
+        if (dupeParent->GetChildren().size() - dropped.size() <= 1)
         {
-            dupeParent->RemoveDupeItemChild(dupeParent->GetChildren().front());
-        }
-
-        // When no children left, remove parent item
-        if (dupeParent->GetChildren().empty())
-        {
-            m_rootItem->RemoveDupeItemChild(dupeParent);
+            rows.insert(dupeParent);
+            emptyGroups.insert(dupeParent);
             nodeIter = m_nodeTracker.erase(nodeIter);
+            continue;
         }
-        else
+
+        if (!dropped.empty())
         {
-            ++nodeIter;
+            rows.insert(dropped.begin(), dropped.end());
+            shrunkGroups.emplace_back(dupeParent, std::move(dropped));
         }
+        ++nodeIter;
     }
+
+    OnChildrenRemoved(rows);
+    for (auto& [dupeParent, dropped] : shrunkGroups) dupeParent->RemoveDupeItemChildren(dropped);
+    m_rootItem->RemoveDupeItemChildren(emptyGroups);
     std::erase_if(m_childTracker, [](const auto& pair)
     {
         return pair.second.size() <= 1;

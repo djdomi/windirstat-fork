@@ -1178,6 +1178,51 @@ void CWdsListControl::RemoveListItem(const int i, const int c)
     }
 }
 
+void CWdsListControl::RemoveListItems(const std::unordered_set<const CWdsListItem*>& items)
+{
+    // Compact scattered rows in one pass; removing them one at a time renumbers every following row each time
+    const auto first = std::ranges::find_if(m_items, [&](const CWdsListItem* item) { return items.contains(item); });
+    if (first == m_items.end()) return;
+
+    std::vector<std::unique_ptr<CWdsListItem>> removedItems;
+    SelectionPreserver preserve(this);
+
+    const int i = static_cast<int>(first - m_items.begin());
+    auto kept = first;
+    for (auto it = first; it != m_items.end(); ++it)
+    {
+        if (!items.contains(*it))
+        {
+            *kept++ = *it;
+            continue;
+        }
+
+        GetIconHandler()->ForgetAsyncShellInfoLookup(*it);
+        m_itemMap.erase(*it);
+        if (m_ownsItems)
+        {
+            removedItems.emplace_back(*it);
+        }
+    }
+    m_items.erase(kept, m_items.end());
+
+    for (const auto [offset, item] : std::views::enumerate(std::span(m_items).subspan(i)))
+    {
+        m_itemMap[item] = static_cast<int>(i + offset);
+    }
+
+    const int itemCount = static_cast<int>(m_items.size());
+    SetItemCountEx(itemCount, LVSICF_NOINVALIDATEALL | LVSICF_NOSCROLL);
+    if (i < itemCount)
+    {
+        RedrawItems(i, itemCount - 1);
+    }
+    else
+    {
+        Invalidate();
+    }
+}
+
 bool CWdsListControl::DeleteItem(const int i)
 {
     RemoveListItem(i);

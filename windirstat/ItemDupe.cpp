@@ -130,26 +130,23 @@ void CItemDupe::AddDupeItemChildren(std::span<CItemDupe* const> children)
     CFileDupeControl::Get()->OnChildrenAdded(this, rows);
 }
 
-void CItemDupe::RemoveDupeItemChild(CItemDupe* child)
+void CItemDupe::RemoveDupeItemChildren(const std::unordered_set<CItemDupe*>& children)
 {
-    if (IsVisible())
-    {
-        CFileDupeControl::Get()->OnChildRemoved(this, child);
-    }
-
-    // Adjust parent item sizes
+    // Callers remove the rows first through CTreeListControl::OnChildrenRemoved
     std::scoped_lock guard(m_protect);
-    if (const auto childItem = child->GetLinkedItem(); childItem != nullptr)
+    const auto removed = std::erase_if(m_children, [&](CItemDupe* child)
     {
-        m_sizeLogical -= childItem->GetSizeLogical();
-        m_sizePhysical -= childItem->GetSizePhysical();
-    }
+        if (!children.contains(child)) return false;
 
-    auto& children = m_children;
-    if (const auto it = std::ranges::find(children, child); it != children.end())
-    {
-        children.erase(it);
-        m_captionDirty = true;
-    }
-    delete child;
+        // Adjust parent item sizes
+        if (const auto childItem = child->GetLinkedItem(); childItem != nullptr)
+        {
+            m_sizeLogical -= childItem->GetSizeLogical();
+            m_sizePhysical -= childItem->GetSizePhysical();
+        }
+        return true;
+    });
+    if (removed > 0) m_captionDirty = true;
+
+    for (const auto* child : children) delete child;
 }

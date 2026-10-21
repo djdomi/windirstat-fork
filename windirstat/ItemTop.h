@@ -36,5 +36,5 @@ public:
     CTreeListItem* GetAncestorCheckItem() override { return m_item; }
 
     void AddTopItemChild(CItemTop* child);
-    void RemoveTopItemChild(CItemTop* child);
+    void RemoveTopItemChildren(const std::unordered_set<CItemTop*>& children);
 };

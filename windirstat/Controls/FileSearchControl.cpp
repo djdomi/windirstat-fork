@@ -153,22 +153,36 @@ void CFileSearchControl::ProcessSearch(CItem* item, const SearchCriteria& criter
     ExpandItem(0);
 }
 
-void CFileSearchControl::RemoveItem(CItem* item)
+void CFileSearchControl::RemoveItems(const std::vector<CItem*>& items)
 {
-    const ScopedRedrawPause lock(this);
+    const std::unordered_set<const CItem*> refreshed(items.begin(), items.end());
+    std::unordered_set<const CItem*> containers;
+    for (const CItem* item : items)
+        for (const CItem* parent = item->GetParent(); parent != nullptr; parent = parent->GetParent())
+            containers.insert(parent);
+
     const bool sizeFilterActive = m_criteria.sizeMinimum || m_criteria.sizeMaximum ||
         m_criteria.physicalMinimum || m_criteria.physicalMaximum;
+    std::unordered_set<CItemSearch*> removed;
     std::erase_if(m_itemTracker, [&](const auto& pair)
     {
-        const bool insideRefresh = pair.first == item || item->IsAncestorOf(pair.first);
-        if (!insideRefresh && !(sizeFilterActive && pair.first->IsAncestorOf(item))) return false;
+        bool insideRefresh = false;
+        for (const CItem* walk = pair.first; walk != nullptr && !insideRefresh; walk = walk->GetParent())
+            insideRefresh = refreshed.contains(walk);
+        if (!insideRefresh && !(sizeFilterActive && containers.contains(pair.first))) return false;
 
         // Preserve untouched ancestors and distinguish directories from marker objects at the same URI.
         m_removedItems.push_back({ pair.first->GetPath(), pair.first->GetRawType() & IT_MASK,
             IsItemSelected(pair.second), insideRefresh ? nullptr : pair.first });
-        m_rootItem->RemoveSearchItemChild(pair.second);
+        removed.insert(pair.second);
         return true;
     });
+    if (removed.empty()) return;
+
+    // Drop all affected rows in one pass before releasing the results
+    const ScopedRedrawPause lock(this);
+    OnChildrenRemoved({ removed.begin(), removed.end() });
+    m_rootItem->RemoveSearchItemChildren(removed);
 }
 
 void CFileSearchControl::RestoreItems()
@@ -182,10 +196,37 @@ void CFileSearchControl::RestoreItems()
     const bool expanded = m_rootItem->IsExpanded();
     CollapseItem(0);
     CItem* root = CWinDirStatModel::Get()->GetRootItem();
+
+    // Look up each parent folder once and index its children; resolving every result from the
+    // root would rescan the same sibling list per result. Remote paths keep the full lookup,
+    // which tells directories and marker objects sharing one URI apart.
+    struct Folder { const CItem* item; std::unordered_map<std::wstring_view, CItem*> children; };
+    std::unordered_map<std::wstring, Folder> folders;
+    const auto resolve = [&](const RemovedItem& removed) -> CItem*
+    {
+        const size_t slash = removed.path.rfind(wds::chrBackslash);
+        if (StorageSource::IsPath(removed.path) || slash == std::wstring::npos || slash + 1 == removed.path.size())
+            return root->FindItemByPath(removed.path, false, removed.type);
+
+        auto [entry, added] = folders.try_emplace(removed.path.substr(0, slash));
+        auto& folder = entry->second;
+        if (added)
+        {
+            folder.item = root->FindItemByPath(entry->first);
+            if (folder.item != nullptr && !folder.item->IsLeaf())
+                for (CItem* child : folder.item->GetChildren()) folder.children.try_emplace(child->GetNameView(), child);
+        }
+
+        // A missing parent can still be an enumeration root itself
+        if (folder.item == nullptr) return root->FindItemByPath(removed.path, false, removed.type);
+        const auto found = folder.children.find(std::wstring_view(removed.path).substr(slash + 1));
+        return found == folder.children.end() ? nullptr : found->second;
+    };
+
     for (const auto& removed : m_removedItems)
     {
         CItem* item = removed.item;
-        if (item == nullptr) item = root->FindItemByPath(removed.path, false, removed.type);
+        if (item == nullptr) item = resolve(removed);
         if (item == nullptr || !m_criteria.Matches(item, termRegex)) continue;
         const auto [iter, inserted] = m_itemTracker.try_emplace(item, nullptr);
         if (inserted)

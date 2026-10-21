@@ -64,23 +64,17 @@ void CItemSearch::AddSearchItemChild(CItemSearch* child)
     }
 }
 
-void CItemSearch::RemoveSearchItemChild(CItemSearch* child)
+void CItemSearch::RemoveSearchItemChildren(const std::unordered_set<CItemSearch*>& children)
 {
-    if (IsVisible())
-    {
-        CFileSearchControl::Get()->OnChildRemoved(this, child);
-    }
-
+    // Callers remove the rows first through CTreeListControl::OnChildrenRemoved
     std::scoped_lock guard(m_protect);
-    auto& children = m_children;
-    if (const auto it = std::ranges::find(children, child); it != children.end())
+    if (std::erase_if(m_children, [&](CItemSearch* child) { return children.contains(child); }) > 0)
     {
-        children.erase(it);
         m_totalsPending = true;
         m_limitExceeded = true;
     }
 
-    delete child;
+    for (const auto* child : children) delete child;
 }
 
 CItemSearch::SizeTotals CItemSearch::CalculateTotals() const

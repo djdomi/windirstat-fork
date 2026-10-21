@@ -1087,12 +1087,12 @@ void CWinDirStatModel::StartScanningEngine(std::vector<CItem*> items)
     // Remove items in UI thread so we do not conflict with the timer updates
     using VisualInfo = struct { bool wasExpanded; bool isSelected; };
     std::unordered_map<CItem*, VisualInfo> visualInfo;
+    CFileSearchControl::Get()->RemoveItems(items);
     for (auto item : std::vector(items))
     {
         // Clear items from duplicates and top list
         CFileDupeControl::Get()->RemoveItem(item);
         CFileTopControl::Get()->RemoveItem(item);
-        CFileSearchControl::Get()->RemoveItem(item);
 
         // Record current visual arrangement to reapply afterward
         if (item->IsVisible())
