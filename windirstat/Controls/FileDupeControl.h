@@ -18,7 +18,7 @@ public:
     static CFileDupeControl* Get() { return m_singleton; }
     CItemDupe* GetRootItem() const { return m_rootItem; }
     void ProcessDuplicate(CItem* item, BlockingQueue<CItem*>* queue);
-    void RemoveItem(CItem* item);
+    void RemoveItems(const std::vector<CItem*>& items);
     void SortItems() override;
     void AfterDeleteAllItems() override;
 

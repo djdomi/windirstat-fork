@@ -1064,7 +1064,8 @@ void CWinDirStatModel::StartScanningEngine(std::vector<CItem*> items)
         items = items.front()->GetChildren();
     }
 
-    const auto selectedItems = GetAllSelected();
+    const auto selected = GetAllSelected();
+    const std::unordered_set<CItem*> selectedItems(selected.begin(), selected.end());
     std::unordered_set<CItem*> doneItems;
     for (auto* item : items)
         if (item->IsDone()) doneItems.insert(item);
@@ -1088,16 +1089,31 @@ void CWinDirStatModel::StartScanningEngine(std::vector<CItem*> items)
     using VisualInfo = struct { bool wasExpanded; bool isSelected; };
     std::unordered_map<CItem*, VisualInfo> visualInfo;
     CFileSearchControl::Get()->RemoveItems(items);
+    CFileDupeControl::Get()->RemoveItems(items);
+    CFileTopControl::Get()->RemoveItems(items);
+
+    // Vanished items are detached together; detaching them one by one
+    // sends every removal through the whole file tree view
+    std::unordered_set<CItem*> vanished;
+    std::unordered_set<CItem*> recalcParents;
+    const auto detachVanished = [&]
+    {
+        // Remove vanished items from the list so we do not rescan them
+        std::erase_if(items, [&](CItem* item) { return vanished.contains(item); });
+        CItem::RemoveChildren(vanished);
+        vanished.clear();
+
+        // Recalculate each affected folder once after the vanished items are gone;
+        // recalculating per item scans all siblings again for every item
+        for (CItem* parent : recalcParents) parent->UpwardRecalcLastChange();
+        recalcParents.clear();
+    };
     for (auto item : std::vector(items))
     {
-        // Clear items from duplicates and top list
-        CFileDupeControl::Get()->RemoveItem(item);
-        CFileTopControl::Get()->RemoveItem(item);
-
         // Record current visual arrangement to reapply afterward
         if (item->IsVisible())
         {
-            visualInfo[item].isSelected = std::ranges::contains(selectedItems, item);
+            visualInfo[item].isSelected = selectedItems.contains(item);
             visualInfo[item].wasExpanded = item->IsExpanded();
         }
 
@@ -1106,7 +1122,7 @@ void CWinDirStatModel::StartScanningEngine(std::vector<CItem*> items)
 
         // Remove item from tree
         item->ExtensionDataProcessChildren(true);
-        item->UpwardRecalcLastChange();
+        if (CItem* parent = item->GetParent(); parent != nullptr) recalcParents.insert(parent);
         item->UpwardSubtractSizePhysical(item->GetSizePhysicalRaw());
         item->UpwardSubtractSizeLogical(item->GetSizeLogical());
         item->UpwardSubtractFiles(item->GetFilesCount());
@@ -1133,11 +1149,9 @@ void CWinDirStatModel::StartScanningEngine(std::vector<CItem*> items)
         }
         if (CFiltering::IsFilteredOut(item) || !exists)
         {
-            // Remove item from list so we do not rescan it
-            std::erase(items, item);
-
             if (item->IsRootItem())
             {
+                detachVanished();
                 Get()->UnlinkRoot();
                 // No worker is launched to release this scan's suspension.
                 CMainFrame::Get()->GetVisualizationPane()->SuspendRecalculationDrawing(false);
@@ -1153,9 +1167,11 @@ void CWinDirStatModel::StartScanningEngine(std::vector<CItem*> items)
                 parent->UpwardSubtractFiles(item->IsTypeOrFlag(IT_FILE) ? 1 : 0);
                 parent->UpwardSubtractFolders(item->IsTypeOrFlag(IT_FILE) ? 0 : 1);
             }
-            parent->RemoveChild(item);
+            vanished.insert(item);
         }
     }
+
+    detachVanished();
     InvalidateSelectionCache();
 
     // Refresh filter cutoffs immediately before scanning in case settings

@@ -786,6 +786,9 @@ void CTreeListControl::OnChildrenRemoved(const std::unordered_set<const CTreeLis
     std::unordered_set<const CTreeListItem*> parents;
     for (const CTreeListItem* child : children)
     {
+        // A shown parent changes its totals even when collapsed
+        if (const CTreeListItem* parent = child->GetParent(); parent != nullptr) parents.insert(parent);
+
         const int c = FindTreeItem(child);
         if (c == -1) continue;
 
@@ -796,7 +799,6 @@ void CTreeListControl::OnChildrenRemoved(const std::unordered_set<const CTreeLis
             if (row->GetIndent() <= child->GetIndent()) break;
             rows.insert(row);
         }
-        if (const CTreeListItem* parent = child->GetParent(); parent != nullptr) parents.insert(parent);
     }
     RemoveListItems(rows);
 

@@ -109,8 +109,10 @@ void CFileTopControl::SortItems()
     CTreeListControl::SortItems();
 }
 
-void CFileTopControl::RemoveItem(CItem* item)
+void CFileTopControl::RemoveItems(const std::vector<CItem*>& items)
 {
+    if (items.empty()) return;
+
     // Fold pending scan results into the tracked list before calculating
     // removals so queued descendants do not get re-added by SortItems().
     CItem* newItem = nullptr;
@@ -121,7 +123,7 @@ void CFileTopControl::RemoveItem(CItem* item)
 
     // Create list of all items to remove
     std::unordered_set<CItem*> toRemove;
-    std::vector queue{ item };
+    std::vector<CItem*> queue(items.begin(), items.end());
     while (!queue.empty())
     {
         const auto qitem = queue.back();

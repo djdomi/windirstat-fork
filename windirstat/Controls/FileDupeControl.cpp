@@ -147,17 +147,17 @@ void CFileDupeControl::SortItems()
     CTreeListControl::SortItems();
 }
 
-void CFileDupeControl::RemoveItem(CItem* item)
+void CFileDupeControl::RemoveItems(const std::vector<CItem*>& items)
 {
     // Exit immediately if duplicate detection is disabled
-    if (!COptions::ScanForDuplicates) return;
+    if (!COptions::ScanForDuplicates || items.empty()) return;
 
     // Publish queued nodes before pruning references to items that will be refreshed.
     SortItems();
 
     // Enumerate child items and mark all as unhashed
     std::unordered_set<CItem*> removedItems;
-    std::vector queue({ item });
+    std::vector<CItem*> queue(items.begin(), items.end());
     while (!queue.empty())
     {
         const auto qitem = queue.back();
